@@ -80,15 +80,15 @@ class log:
 PORT = 0
 worker_address = "http://localhost:13337/"
 
-waittime = 5 #time wait to next timeout in seconds
+waittime = 6 #time wait to next timeout in seconds
 isTimeOut = False #Election Timeout
 TimeOutCounter = False
 workerList=[]
 balancerList=[]
 nodeIndex = 0
-status = 2 #0 = follower, 1 = candidate, 2 = leader
+status = 0 #0 = follower, 1 = candidate, 2 = leader
 votedFor = -1
-currentTerm = -1
+currentTerm = 0
 numVote = 0
 numWorker = 0
 numBalancer = 0
@@ -100,14 +100,25 @@ nodeLog=log()
 workerData=workerLoad(99)
 #Index input terakhir
 lastIndex=0
+def requestvote(url) :
+    print("sendind request vote " + url)
+    try :
+        requests.get(url.__str__() + "vote/" + currentTerm.__str__() + "/" + nodeIndex.__str__())
+    except:
+        print("error request")
 
 class TimeOutThread(Thread):
     def start_new_term(self):
+        global numVote
         global currentTerm
         currentTerm += 1
+        numVote +=1
+        print("starting election on term " + currentTerm.__str__())
         for url in balancerList:
             if balancerList.index(url)!=nodeIndex:
-                requests.get(url.__str__() + "vote/" + currentTerm.__str__() + "/" + nodeIndex.__str__() )
+                voteThread = Thread(target=requestvote,args = (url, ))
+                voteThread.daemon = True
+                voteThread.start()
 
     def run(self):
         global TimeOutCounter
@@ -122,12 +133,22 @@ class TimeOutThread(Thread):
             if not TimeOutCounter :
                 #timeout sebagai follower, menjadi kandidat lalu mulai election baru
                 if(status == 0) :
+                    print("Become a candidate starting a new election")
                     status = 1
                     self.start_new_term()
 
                 #timeout sebagai candidate, memulai election baru
-                if(status == 1) :
-                    self.start_new_term()
+                elif(status == 1) :
+                    print("number vote : " + numVote.__str__() )
+                    if(numVote >= ((numBalancer+1)/2)) :
+                        print("Have majority vote, now becoming a leader")
+                        numVote = 0
+                        status = 2
+                    else :
+                        print("Fail election, starting a new one")
+                        numVote = 0
+                        self.start_new_term()
+
             TimeOutCounter = False
             print("Reset timeout")
 
@@ -144,24 +165,34 @@ class NodeHandler(BaseHTTPRequestHandler):
         global numVote
         global currentTerm
         global votedFor
+        global status
         args = self.path.split('/')
         #Merespon permintaan vote
         if args[1] == 'vote' :
             self.send_response(200)
             self.end_headers()
-            print("Received election vote request from node " + args[3])
+            print("Received election vote request from node " + args[3] + " on term " + args[2])
+            print(" This node term " + currentTerm.__str__())
             TimeOutCounter = True
             if currentTerm < int(args[2]) :
+                status = 0
                 currentTerm = int(args[2])
                 votedFor = int(args[3])
-                requests.get(balancerList[int(args[3])]+"recVote/yes")
+                try :
+                    print("Vote yes")
+                    requests.get(balancerList[int(args[3])]+"recVote/yes")
+                except :
+                    print("error request")
             else :
-                requests.get(balancerList[int(args[3])]+"recVote/no")
-                
+                try :
+                    print("Vote no")
+                    requests.get(balancerList[int(args[3])]+"recVote/no")
+                except :
+                    print("error request")
+
         #Menerima workload CPU
         elif args[1] == 'workload' :
             #hanya berjalan jika leader
-
             if status==2:
                 global lastIndex
                 # mengambil data json yang dikirim berupa workload
@@ -173,8 +204,8 @@ class NodeHandler(BaseHTTPRequestHandler):
                 #Harusnya belum dicommit, untuk di tes terlebih dahulu
                 print(int(data['worker_id']).__str__())
                 workerData.workload[int(data['worker_id'])]=float(data['workload'])
-                print(nodeLog.logList[nodeLog.numLog].id_worker)
-                print(nodeLog.logList[nodeLog.numLog].workload)
+                # print(nodeLog.logList[nodeLog.numLog].id_worker)
+                # print(nodeLog.logList[nodeLog.numLog].workload)
             self.send_response(200)
             self.end_headers()
             
@@ -185,11 +216,9 @@ class NodeHandler(BaseHTTPRequestHandler):
             if args[2] == 'yes' :
                 numVote += 1
                 print("Received yes vote")
-
-            if numVote > ((numBalancer + 1) / 2) :
-                isLeader = True
-                numVote = 0
+            else :
                 print("Received no vote")
+
         elif args[1] == 'workload':
             self.send_response(200)
             self.end_headers()
