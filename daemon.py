@@ -18,8 +18,6 @@ def getWorkerId():
     print(workerList.index(url))
     return workerList.index(url)
 
-
-
 def load_config():
     #membaca file configuration
     #yang berisi daftar alamat dan port
