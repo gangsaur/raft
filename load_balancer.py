@@ -2,7 +2,6 @@ from http.server import HTTPServer
 from http.server import BaseHTTPRequestHandler
 from threading import Thread
 from time import sleep
-from random import seed
 import requests
 import sys
 PORT = 0
@@ -13,33 +12,43 @@ isTimeOut = False
 TimeOutCounter = False
 workerList=[]
 balancerList=[]
-nodeIndex
-isLeader = False
+nodeIndex = 0
+status = 0 #0 = follower, 1 = candidate, 2 = leader
 votedFor = -1
 currentTerm = -1
 numVote = 0
-numWorker
-numBalancer
+numWorker = 0
+numBalancer = 0
 
 class TimeOutThread(Thread):
     def start_new_term(self):
+        global currentTerm
+        currentTerm += 1
         for url in balancerList:
-            requests.get(url+"")
+            if balancerList.index(url)!=nodeIndex:
+                requests.get(url.__str__() + "vote/" + currentTerm.__str__() + "/" + nodeIndex.__str__() )
 
     def run(self):
         global TimeOutCounter
         global isTimeOut
+        global status
+        global numVote
         while True:
             if(isTimeOut) :
                 print("Ending the Time Out Thread")
                 break
             sleep(waittime)
             if not TimeOutCounter :
-                
-                isTimeOut = True
-            else :
-                TimeOutCounter = False
-                print("Reset timeout")
+                #timeout sebagai follower, menjadi kandidat lalu mulai election baru
+                if(status == 0) :
+                    status = 1
+                    self.start_new_term()
+
+                #timeout sebagai candidate, memulai election baru
+                if(status == 1) :
+                    self.start_new_term()
+            TimeOutCounter = False
+            print("Reset timeout")
 
 class NodeHandler(BaseHTTPRequestHandler):
     def request_worker(self,n):
@@ -51,29 +60,40 @@ class NodeHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         global TimeOutCounter
+        global numVote
+        global currentTerm
+        global votedFor
         args = self.path.split('/')
         #Merespon permintaan vote
         if args[1] == 'vote' :
-            if currentTerm < args[2] :
-                currentTerm = args[2]
-                votedFor = args[3]
-                requests.get(balancerList[args[3]]+"recVote/yes")
-            else
-                requests.get(balancerList[args[3]]+"recVote/no")
+            self.send_response(200)
+            self.end_headers()
+            print("Received election vote request from node " + args[3])
+            TimeOutCounter = True
+            if currentTerm < int(args[2]) :
+                currentTerm = int(args[2])
+                votedFor = int(args[3])
+                requests.get(balancerList[int(args[3])]+"recVote/yes")
+            else :
+                requests.get(balancerList[int(args[3])]+"recVote/no")
                 
         #Menerima workload CPU
-        else if args[1] == 'load' :
-            TimeOutCounter = True
+        elif args[1] == 'load' :
             self.send_response(200)
             self.end_headers()
             
         #Menerima respon permintaan vote
-        else if args[1] == 'recVote' : 
-            if args[2] == "yes" :
-                numVote++
+        elif args[1] == 'recVote' :
+            self.send_response(200)
+            self.end_headers()
+            if args[2] == 'yes' :
+                numVote += 1
+                print("Received yes vote")
+
             if numVote > ((numBalancer + 1) / 2) :
                 isLeader = True
                 numVote = 0
+                print("Received no vote")
         else :
             self.request_worker(int(args[1]))
 
@@ -83,13 +103,13 @@ def load_config():
     #seluruh worker, daemon, dan node
     global numWorker
     global numBalancer
+    config = 0
 
     try:
         config=open("config.txt","r")
     except Exception:
         print(Exception.__str__())
         exit()
-
     #Baca line pertama, jumlah worker
     numWorker=int(config.__next__())
     for i in range(numWorker):
