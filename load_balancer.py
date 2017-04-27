@@ -4,21 +4,102 @@ from threading import Thread
 from time import sleep
 import requests
 import sys
+import json
+import urllib
+
+class workerLoad:
+    def __init__(self,numWorker):
+        self.numWorker=numWorker
+        self.workload=[]
+        #Set initial cpu load ke 99999
+        for i in range(int(self.numWorker)):
+            self.workload.append(99999)
+
+
+class logData:
+    def __init__(self,term,id_worker,workload):
+        self.term=term
+        self.id_worker=id_worker
+        self.workload=workload
+
+
+
+
+class log:
+    #numlog dan commited selalu mulai dari -1
+    #hal ini perlu dimasukkan pada variable volatile di setiap server
+    def __init__(self):
+        self.commitedLog=-1
+        self.numLog=-1
+        self.logList = []
+
+    def append_log(self,logData):
+        self.logList.append(logData)
+        self.numLog += 1
+
+    def modify_log(self,logData,lastLogIndex):
+        self.logList[lastLogIndex]=logData
+
+
+    def insertLog(self,logData,lastLogIndex):
+        #jika insert log data baru
+        if (self.numLog==(lastLogIndex-1)):
+            self.logList.append(logData)
+
+
+        elif self.commitedLog>=int(lastLogIndex):
+            raise Exception("Cannot change committed log")
+        elif int(lastLogIndex)>self.numLog+1:
+            print ("Lastlog: " + str(lastLogIndex))
+            print("Numlog: " + str(self.numLog))
+            raise Exception("Cannot skip log")
+        #kasus jika insert di tengah" data belum dicommit
+        #modify data yang lama dan hapus data" setelahnya
+        else:
+            self.modify_log(logData,lastLogIndex)
+            for i in range (lastLogIndex+1,self.numLog):
+                self.logList.pop()
+            self.numLog=lastLogIndex
+
+
+    def commit(self,lastLogIndex):
+        if lastLogIndex>self.numLog:
+            raise Exception("Index is too far")
+        elif lastLogIndex<=self.commitedLog:
+            raise Exception("Cannot commit ")
+        elif lastLogIndex>self.commitedLog+1:
+            raise Exception("Commit skipped")
+        else:
+            self.commitedLog=lastLogIndex
+
+
+
+
+
+
 PORT = 0
 worker_address = "http://localhost:13337/"
 
 waittime = 5 #time wait to next timeout in seconds
-isTimeOut = False
+isTimeOut = False #Election Timeout
 TimeOutCounter = False
 workerList=[]
 balancerList=[]
 nodeIndex = 0
-status = 0 #0 = follower, 1 = candidate, 2 = leader
+status = 2 #0 = follower, 1 = candidate, 2 = leader
 votedFor = -1
 currentTerm = -1
 numVote = 0
 numWorker = 0
 numBalancer = 0
+nLog=-1
+nCommited=-1
+#log di setiap node
+nodeLog=log()
+#perbandingan workload antar worker
+workerData=workerLoad(99)
+#Index input terakhir
+lastIndex=0
 
 class TimeOutThread(Thread):
     def start_new_term(self):
@@ -78,7 +159,22 @@ class NodeHandler(BaseHTTPRequestHandler):
                 requests.get(balancerList[int(args[3])]+"recVote/no")
                 
         #Menerima workload CPU
-        elif args[1] == 'load' :
+        elif args[1] == 'workload' :
+            #hanya berjalan jika leader
+
+            if status==2:
+                global lastIndex
+                # mengambil data json yang dikirim berupa workload
+                data = json.loads(urllib.parse.unquote(args[2]))
+                inputData=logData(currentTerm,int(data['worker_id']),float(data['workload']))
+                nodeLog.insertLog(inputData,lastIndex)
+                nodeLog.numLog+=1
+                lastIndex+=1
+                #Harusnya belum dicommit, untuk di tes terlebih dahulu
+                print(int(data['worker_id']).__str__())
+                workerData.workload[int(data['worker_id'])]=float(data['workload'])
+                print(nodeLog.logList[nodeLog.numLog].id_worker)
+                print(nodeLog.logList[nodeLog.numLog].workload)
             self.send_response(200)
             self.end_headers()
             
@@ -94,6 +190,11 @@ class NodeHandler(BaseHTTPRequestHandler):
                 isLeader = True
                 numVote = 0
                 print("Received no vote")
+        elif args[1] == 'workload':
+            self.send_response(200)
+            self.end_headers()
+            dict=json.dumps(urllib.parse.unquote(args[2]))
+
         else :
             self.request_worker(int(args[1]))
 
@@ -136,6 +237,11 @@ def main():
     start = balancerList[nodeIndex].find(":",8)
     end = balancerList[nodeIndex].find("/",8)
     PORT = int(balancerList[nodeIndex][start+1:end])
+    global workerData
+    workerData = workerLoad(len(workerList))
+    print(nodeLog.commitedLog)
+    print(nodeLog.numLog)
+    print(workerData.workload[0])
     try:
         node_thread = Thread(target=StartNode,args = (PORT, ))
         node_thread.daemon = True

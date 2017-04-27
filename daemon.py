@@ -55,7 +55,7 @@ daemonDelay=3
 psutil.cpu_percent(interval=1)
 #gunakan ini jika sudah akan implementasi
 #worker_id=getWorkerId()
-worker_id=1
+worker_id=0
 
 #Loac config.txt
 load_config()
