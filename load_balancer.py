@@ -354,7 +354,7 @@ class NodeHandler(BaseHTTPRequestHandler):
         #Cari bilangan prima
         #formatnya: LaodBalancerURL/AngkaYangDicari
         else :
-            self.send_response(200)
+            
 
             bilanganDicari=int(args[1])
             indexWorkerTerkecil=0
@@ -363,8 +363,9 @@ class NodeHandler(BaseHTTPRequestHandler):
                 if workerData.workload[indexWorkerTerkecil]>workerData.workload[i]:
                     indexWorkerTerkecil=i
             url=workerList[i]
-            requests.get(url+bilanganDicari)
-            self.send_response(200)
+            url=url+bilanganDicari.__str__()
+
+            self.send_response(301)
             self.send_header('Location', url)
             self.end_headers()
 
