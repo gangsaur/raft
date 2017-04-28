@@ -31,12 +31,11 @@ def load_config():
 
     #Read first line, the amount of workers
     numWorker=int(config.__next__())
-    #
     for i in range(numWorker):
         #rstrip to delete whitespace
         workerList.append(config.__next__().rstrip())
 
-        #Read next line, the amound of nodes
+    #Read next line, the amound of nodes
     numBalancer=int(config.__next__())
     for i in range(numBalancer):
         #rstrip to delete whitespace

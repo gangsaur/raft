@@ -8,22 +8,21 @@ import sys
 import json
 import urllib
 
+#Heart beat thread
 class heartBeat(Thread):
-
     def run(self):
         while True:
-            #cuma berjalan jika leader
+            #Process only if leader
             if status==2:
                 while True:
-
                     global TimeOutCounter
                     TimeOutCounter = True
                     print("Kirimkan hati")
-                    #Mengirimkan panjang log dan mempersiapkan log apa saja yang akan dikirim
+                    #Check for log length and decide what to send
                     package={
                         #id of the leader
                         'leader_id': nodeIndex,
-                        #last log number
+                        #Last log number
                         'last_log' :nodeLog.numLog,
                         #Last leader term
                         'term' : currentTerm,
@@ -32,8 +31,8 @@ class heartBeat(Thread):
                     }
                     for url in balancerList:
                         try:
-                            #Request ke follower lain untuk
-                            #Meminta daftar log yang butuh mereka commit
+                            #Request to other follower
+                            #Request needed log entry
                             if balancerList.index(url)!=nodeIndex:
                                 someThread=Thread(target=requests.get(url+"appendLog/"+json.dumps(package),timeout=1))
                                 someThread.daemon=True
@@ -42,7 +41,7 @@ class heartBeat(Thread):
                             print(e.__str__())
                     sleep(2)
 
-
+#Class to store workload
 class workerLoad:
     def __init__(self,numWorker):
         self.numWorker=numWorker
@@ -51,8 +50,9 @@ class workerLoad:
         for i in range(int(self.numWorker)):
             self.workload.append(99999)
 
-
+#Log entry class
 class logData:
+    #Function to turn data into JSON format
     def tojson(self):
         return json.dumps(self, default=lambda o: o.__dict__,
             sort_keys=True, indent=4)
@@ -62,46 +62,43 @@ class logData:
         self.id_worker=id_worker
         self.workload=workload
 
-
-
-
+#Log class, collection of log entry
 class log:
-    #numlog dan commited selalu mulai dari -1
-    #hal ini perlu dimasukkan pada variable volatile di setiap server
+    #numlog and commited start from -1
     def __init__(self):
         self.commitedLog=-1
         self.numLog=-1
         self.logList = []
 
+    #Used to append log data into log
     def append_log(self,logData):
         self.logList.append(logData)
         self.numLog += 1
 
+    #Used to change log data in log
     def modify_log(self,logData,lastLogIndex):
         self.logList[lastLogIndex]=logData
 
-
+    #Check if position is right or not and insert
     def insertLog(self,logData,lastLogIndex):
-        #jika insert log data baru
         if (self.numLog==(lastLogIndex-1)):
             self.append_log(logData)
             print("APPEND LOG")
-
         elif self.commitedLog>=int(lastLogIndex):
             raise Exception("Cannot change committed log")
         elif int(lastLogIndex)>self.numLog+1:
             print ("Lastlog: " + str(lastLogIndex))
             print("Numlog: " + str(self.numLog))
             raise Exception("Cannot skip log")
-        #kasus jika insert di tengah" data belum dicommit
-        #modify data yang lama dan hapus data" setelahnya
+        #"In the middle insert case"
+        #Modify old data and erase the rest
         else:
             self.modify_log(logData,lastLogIndex)
             for i in range (lastLogIndex+1,self.numLog):
                 self.logList.pop()
             self.numLog=lastLogIndex
 
-
+    #Commit log
     def commit(self,lastLogIndex):
         if lastLogIndex>self.numLog:
             raise Exception("Index is too far")
@@ -112,21 +109,16 @@ class log:
         else:
             self.commitedLog=lastLogIndex
 
-
-
-
-
 seed()
-
 PORT = 0
 worker_address = "http://localhost:13337/"
 
-waittime = 6+ uniform(0, 4) #time wait to next timeout in seconds
+waittime = 6+ uniform(0, 4) #Wait time until next timeout in seconds, added random factor
 isTimeOut = False #Election Timeout
 TimeOutCounter = False
 workerList=[]
 balancerList=[]
-nodeIndex = 0 #Index worker sesuai file config
+nodeIndex = 0 #Curren worker index according to config
 status = 0 #0 = follower, 1 = candidate, 2 = leader
 votedFor = -1
 currentTerm = 0
@@ -135,16 +127,15 @@ numWorker = 0
 numBalancer = 0
 nLog=-1
 nCommited=-1
-#log di setiap node
+#Log for every nodes
 nodeLog=log()
-#Variable yang menyimpan ID Leader saat ini
 
-
-#perbandingan workload antar worker
+#Array to store workload
 workerData=workerLoad(99)
-#Index input log terakhir
+#Last log input index
 lastIndex=0
 
+#Used to request vote to node
 def requestvote(url) :
     print("sendind request vote " + url)
     url=url.strip()
@@ -153,12 +144,14 @@ def requestvote(url) :
     except Exception as e:
         print("error request exception" + e.__str__())
 
+#Thread to process timeout
 class TimeOutThread(Thread):
+    #Used to start new term and election
     def start_new_term(self):
         global numVote
         global currentTerm
         global votedFor
-        #Set votedFor ke diri sendiri
+        #Vote for myself
         votedFor=nodeIndex
         currentTerm += 1
         numVote +=1
@@ -170,6 +163,7 @@ class TimeOutThread(Thread):
                 voteThread.daemon = True
                 voteThread.start()
 
+    #Main thread process
     def run(self):
         global TimeOutCounter
         global isTimeOut
@@ -180,57 +174,59 @@ class TimeOutThread(Thread):
                 print("Ending the Time Out Thread")
                 break
             sleep(waittime)
+
+            #If timeout, process
             if not TimeOutCounter :
-                #timeout sebagai follower, menjadi kandidat lalu mulai election baru
+                #Timeout as follower, ascend to candidate
                 if(status == 0) :
                     print("Become a candidate starting a new election")
                     status = 1
                     self.start_new_term()
-                    #Menunggu vote
+                    #Wait for vote
                     sleep(1.5)
 
-                #timeout sebagai candidate, memulai election baru
+                #Timeout as candidate, check number of vote
                 elif(status == 1) :
                     print("number vote : " + numVote.__str__() )
+                    #Ascend to leader
                     if(numVote >= ((numBalancer+1)/2)) :
                         print("Have majority vote, now becoming a leader")
                         numVote = 0
                         status = 2
+                    #Failed, start new term and election
                     else :
                         print("Fail election, starting a new one")
                         numVote = 0
                         self.start_new_term()
                         sleep(1.5)
+            #Prevent timeout as leader
             if (status!=2) :
                 TimeOutCounter = False
             print("Reset timeout")
 
+#HTTPServer to response request
 class NodeHandler(BaseHTTPRequestHandler):
-    def request_worker(self,n):
-        #redirecting client request to worker
-        request = worker_address + n.__str__();
-        self.send_response(301)
-        self.send_header('Location',request)
-        self.end_headers()
-
+    #Response to get method
     def do_GET(self):
         global TimeOutCounter
         global numVote
         global currentTerm
         global votedFor
         global status
+        #Get input, split by /
         args = self.path.split('/')
-        #Merespon permintaan vote
+        #Response to 'vote for me' request
         if args[1] == 'vote' :
             self.send_response(200)
             self.end_headers()
             print("Received election vote request from node " + args[3] + " on term " + args[2])
             print(" This node term " + currentTerm.__str__())
             TimeOutCounter = True
+            #Reply yes if condition is met
             if currentTerm < int(args[2]) :
-                status = 0
-                currentTerm = int(args[2])
-                votedFor = int(args[3])
+                status = 0 #Demote to follower
+                currentTerm = int(args[2]) #Update current term
+                votedFor = int(args[3]) #Update voted for
                 try :
                     print("Vote yes")
                     requests.get(balancerList[int(args[3])]+"recVote/yes",timeout=1)
@@ -238,6 +234,7 @@ class NodeHandler(BaseHTTPRequestHandler):
                     TimeOutCounter=True
                 except :
                     print("error request")
+            #Reply no if condition is not met
             else :
                 try :
                     print("Vote no")
@@ -245,24 +242,24 @@ class NodeHandler(BaseHTTPRequestHandler):
                 except :
                     print("error request")
 
-        #Menerima workload CPU
+        #Response to sent CPU workload and store it
         elif args[1] == 'workload' :
-            #hanya berjalan jika leader
+            #Process only if leader node
             if status==2:
                 global lastIndex
-                # mengambil data json yang dikirim berupa workload
+                #Process sent json data
                 data = json.loads(urllib.parse.unquote(args[2]))
                 inputData=logData(currentTerm,int(data['worker_id']),float(data['workload']))
+
+                #Put data into log
                 nodeLog.insertLog(inputData,lastIndex)
                 nodeLog.commitedLog+=1
                 print(nodeLog.logList[nodeLog.numLog].workload)
                 print(nodeLog.logList[nodeLog.numLog].id_worker)
-                print("YOW WHAT THE FUCK")
                 print("Panjang log leader saat ini: "+nodeLog.numLog.__str__())
                 lastIndex+=1
 
                 #Harusnya belum dicommit, untuk di tes terlebih dahulu
-
                 workerData.workload[int(data['worker_id'])]=float(data['workload'])
                 print("Worker Data:")
                 print("Jumlah worker: "+workerData.numWorker.__str__())
@@ -273,7 +270,7 @@ class NodeHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.end_headers()
 
-        #Menerima respon permintaan vote
+        #Notify requester about voting decision
         elif args[1] == 'recVote' :
             self.send_response(200)
             self.end_headers()
@@ -283,23 +280,25 @@ class NodeHandler(BaseHTTPRequestHandler):
                 print("Received yes vote")
             else :
                 print("Received no vote")
-
-        #Ketika leader meminta append log baru
-        #Cek log yang sudah dimiliki oleh follower
-        #Dan follower merequest log yang dibutuhkan menuju leader
-        #Jangan lupa lakukan commit untuk data berdasarkan last commit leader
+        
+        #When leaders ask to append new log, check the log which follower has.
+        #Follower request needed log entry. Commit according to leader last commit
         elif args[1] == 'appendLog':
-            print("MASUK APPENDLOG")
             numVote=0
             TimeOutCounter=True
             self.send_response(200)
             self.end_headers()
+            
+            #Process sent json data
             data = json.loads(urllib.parse.unquote(args[2]))
             LeaderTerm=int(data['term'])
+            
+            #Update term
             currentTerm=LeaderTerm
             LeaderID = int(data['leader_id'])
             LeaderLastLog=int(data['last_log'])
             LeaderLastCommit=int(data['leader_commit'])
+ 
             url = balancerList[LeaderID]
             #if (LeaderTerm<currentTerm):
              #   raise Exception("Leader term is less than follower term")
@@ -314,15 +313,19 @@ class NodeHandler(BaseHTTPRequestHandler):
 
             requests.get(url+"reqLog/"+nodeLog.numLog.__str__()+"/"+LeaderLastLog.__str__()+"/"+nodeIndex.__str__(),timeout=1)
 
+        #Request append to follower
         elif args[1] == 'reqLog':
             self.send_response(200)
             self.end_headers()
+            #Parse json data
             data = json.loads(urllib.parse.unquote(args[4]))
+            #Process data into array
             SendLog=[]
             for i in range(int(args[2]),int(args[3])):
                 SendLog.append(nodeLog.logList[i].tojson())
             jumlahData=int(args[3])-int(args[2])
             print("JUMLAH DATANYA: "+jumlahData.__str__())
+            #Make dict which will be used for mesage
             dict={
                 'Log':SendLog,
                 'NumData':jumlahData,
@@ -331,70 +334,71 @@ class NodeHandler(BaseHTTPRequestHandler):
             argument4=args[4]
             targetIndex=int(argument4)
             targetURL=balancerList[targetIndex]
-
-            print("TARGETNYA : " + targetURL)
-            print("FUCKING JSON DUMP "+json.dumps(dict))
+            
+            #Send request
             requests.get(targetURL+"append/"+json.dumps(dict))
+        
+        #Append new data for follower from received message
         elif args[1] == 'append':
-            print("MASUK APPEND FOR GOD SAKE")
             self.send_response(200)
             self.end_headers()
+            #Parse JSON
             data = json.loads(urllib.parse.unquote(args[2]))
-            print("JUMLAH DATA: "+data['NumData'].__str__())
+
+            #Append every new sent data
             for i in range(int(data['NumData'])):
-                print("APPEND DATA BARU")
                 print(data['Log'][i].__str__())
                 t = json.loads(data['Log'][i])
                 nodeLog.append_log(t)
                 workerData.workload[t['id_worker']] = t['workload']
                 print(workerData.workload.__str__())
-            print("JUMLAH DATA FOLLOWER SAAT INI: " + nodeLog.numLog.__str__())
 
-
-        #Cari bilangan prima
+        #Search for prime numbers
         #formatnya: LaodBalancerURL/AngkaYangDicari
         else :
-            
-
             bilanganDicari=int(args[1])
             indexWorkerTerkecil=0
-            #Loop dari semua worker, mencari worker dengan load terkecil
+            #Loop to search smallest worker
             for i in range(workerData.numWorker):
                 if workerData.workload[indexWorkerTerkecil]>workerData.workload[i]:
                     indexWorkerTerkecil=i
             url=workerList[i]
             url=url+bilanganDicari.__str__()
 
+            #Redirect request to worker
             self.send_response(301)
             self.send_header('Location', url)
             self.end_headers()
 
+#Read configuration file which contains
+#address and port of workers, daemons, and nodes
 def load_config():
-    #membaca file configuration
-    #yang berisi daftar alamat dan port
-    #seluruh worker, daemon, dan node
     global numWorker
     global numBalancer
     config = 0
 
+    #Open config file
     try:
         config=open("config.txt","r")
     except Exception:
         print(Exception.__str__())
         exit()
-    #Baca line pertama, jumlah worker
+    #Read first line, the amount of workers
     numWorker=int(config.__next__())
     for i in range(numWorker):
-        #rstrip untuk menghilangkan whitespace
+        #rstrip to delete whitespace
         workerList.append(config.__next__().rstrip())
+
+    #Read next line, the amound of nodes
     numBalancer=int(config.__next__())
     for i in range(numBalancer):
-        #rstrip untuk menghilangkan whitespace
+        #rstrip to delete whitespace
         balancerList.append(config.__next__().rstrip())
     config.close()
     print(workerList)
     print(balancerList)
 
+#Used to start HTTPServer
 def StartNode(port):
     node = HTTPServer(("", port), NodeHandler)
     node.serve_forever()
@@ -403,14 +407,21 @@ def main():
     global PORT
     global nodeIndex
     global isLeader
+    global workerData
+    
+    #Load list of workers and balancers
     load_config()
+
+    #Get appropiate port from index which user input
     nodeIndex = int(sys.argv[1])
     start = balancerList[nodeIndex].find(":",8)
     end = balancerList[nodeIndex].find("/",8)
     PORT = int(balancerList[nodeIndex][start+1:end])
-    global workerData
+    
+    #Create worker data to store workloads
     workerData = workerLoad(len(workerList))
 
+    #Start server to request response
     try:
         node_thread = Thread(target=StartNode,args = (PORT, ))
         node_thread.daemon = True
@@ -420,16 +431,19 @@ def main():
         print("Error spawning node")
         exit()
 
+    #Start time out thread
     tothread = TimeOutThread()
     tothread.daemon = True
     tothread.start()
+    
+    #Start Heart Beat thread
     Heart = heartBeat()
     Heart.daemon=True
     Heart.start()
 
-    input("\nPress anything to exit..\n\n")
+    #Prevent program closing
+    input("")
 
-
-
+#To start main()
 if __name__ == "__main__":
     main()
