@@ -9,6 +9,7 @@ import json
 import urllib
 
 class heartBeat(Thread):
+
     def run(self):
         while True:
             #cuma berjalan jika leader
@@ -33,9 +34,11 @@ class heartBeat(Thread):
                             #Request ke follower lain untuk
                             #Meminta daftar log yang butuh mereka commit
                             if balancerList.index(url)!=nodeIndex:
-                                Thread(target=requests.get(url+"appendLog/"+json.dumps(package),timeout=1))
-                        except Exception:
-                            print(Exception)
+                                someThread=Thread(target=requests.get(url+"appendLog/"+json.dumps(package),timeout=1))
+                                someThread.daemon=True
+                                someThread.start()
+                        except Exception as e:
+                            print(e.__str__())
                     sleep(2)
 
 
@@ -108,6 +111,7 @@ class log:
 
 
 
+seed()
 
 PORT = 0
 worker_address = "http://localhost:13337/"
@@ -138,20 +142,25 @@ lastIndex=0
 
 def requestvote(url) :
     print("sendind request vote " + url)
+    url=url.strip()
     try :
-        requests.get(url.__str__() + "vote/" + currentTerm.__str__() + "/" + nodeIndex.__str__())
-    except:
-        print("error request")
+        requests.get(url + "vote/" + currentTerm.__str__() + "/" + nodeIndex.__str__(),timeout=1)
+    except Exception as e:
+        print("error request exception" + e.__str__())
 
 class TimeOutThread(Thread):
     def start_new_term(self):
         global numVote
         global currentTerm
+        global votedFor
+        #Set votedFor ke diri sendiri
+        votedFor=nodeIndex
         currentTerm += 1
         numVote +=1
         print("starting election on term " + currentTerm.__str__())
         for url in balancerList:
             if balancerList.index(url)!=nodeIndex:
+                url=url.strip()
                 voteThread = Thread(target=requestvote,args = (url, ))
                 voteThread.daemon = True
                 voteThread.start()
@@ -172,6 +181,8 @@ class TimeOutThread(Thread):
                     print("Become a candidate starting a new election")
                     status = 1
                     self.start_new_term()
+                    #Menunggu vote
+                    sleep(1.5)
 
                 #timeout sebagai candidate, memulai election baru
                 elif(status == 1) :
@@ -184,8 +195,9 @@ class TimeOutThread(Thread):
                         print("Fail election, starting a new one")
                         numVote = 0
                         self.start_new_term()
-
-            TimeOutCounter = False
+                        sleep(1.5)
+            if (status!=2) :
+                TimeOutCounter = False
             print("Reset timeout")
 
 class NodeHandler(BaseHTTPRequestHandler):
@@ -216,13 +228,15 @@ class NodeHandler(BaseHTTPRequestHandler):
                 votedFor = int(args[3])
                 try :
                     print("Vote yes")
-                    requests.get(balancerList[int(args[3])]+"recVote/yes")
+                    requests.get(balancerList[int(args[3])]+"recVote/yes",timeout=1)
+                    sleep(3)
+                    TimeOutCounter=True
                 except :
                     print("error request")
             else :
                 try :
                     print("Vote no")
-                    requests.get(balancerList[int(args[3])]+"recVote/no")
+                    requests.get(balancerList[int(args[3])]+"recVote/no",timeout=1)
                 except :
                     print("error request")
 
@@ -235,11 +249,10 @@ class NodeHandler(BaseHTTPRequestHandler):
                 data = json.loads(urllib.parse.unquote(args[2]))
                 inputData=logData(currentTerm,int(data['worker_id']),float(data['workload']))
                 nodeLog.insertLog(inputData,lastIndex)
-                print("INI ISI LOG TERAKHIR: "+nodeLog.logList[lastIndex].id_worker.__str__())
-                print("INI ISI LOG TERAKHIR: " + nodeLog.logList[lastIndex].workload.__str__())
+
                 lastIndex+=1
                 #Harusnya belum dicommit, untuk di tes terlebih dahulu
-                print(int(data['worker_id']).__str__())
+
                 workerData.workload[int(data['worker_id'])]=float(data['workload'])
                 # print(nodeLog.logList[nodeLog.numLog].id_worker)
                 # print(nodeLog.logList[nodeLog.numLog].workload)
@@ -262,6 +275,8 @@ class NodeHandler(BaseHTTPRequestHandler):
         #Dan follower merequest log yang dibutuhkan menuju leader
         #Jangan lupa lakukan commit untuk data berdasarkan last commit leader
         elif args[1] == 'appendLog':
+            print("MASUK APPENDLOG")
+            numVote=0
             TimeOutCounter=True
             self.send_response(200)
             self.end_headers()
@@ -281,12 +296,13 @@ class NodeHandler(BaseHTTPRequestHandler):
                 #ubah commit follower sesuai leader
                 nodeLog.commitedLog=LeaderLastCommit
                 #Request log dari numlog saat ini, hingga leaderlast log
-                requests.get(url+"/reqLog/"+nodeLog.numLog.__str__()+"/"+LeaderLastLog.__str__()+"/"+balancerList[nodeIndex])
+
+            requests.get(url+"reqLog/"+nodeLog.numLog.__str__()+"/"+LeaderLastLog.__str__()+"/"+nodeIndex.__str__(),timeout=1)
 
         elif args[1] == 'reqLog':
             self.send_response(200)
             self.end_headers()
-
+            data = json.loads(urllib.parse.unquote(args[4]))
             SendLog=[]
             for i in range(int(args[2]),int(args[3])):
                 SendLog.append(nodeLog.logList[i])
@@ -295,14 +311,18 @@ class NodeHandler(BaseHTTPRequestHandler):
                 'NumData':int(args[3])-int(args[2])
             }
             #Request append ke follower
-            requests.get(args[4]+"/append/"+json.dumps(dict))
+            argument4=args[4]
+            targetIndex=int(argument4)
+            targetURL=balancerList[targetIndex]
+            print("TARGETNYA : " + targetURL)
+            requests.get(targetURL+"append/"+json.dumps(dict),timeout=1)
         elif args[1] == 'append':
             self.send_response(200)
             self.end_headers()
             data = json.loads(urllib.parse.unquote(args[2]))
-            print("JUMLAH DATA: "+data['NumData'])
+            print("JUMLAH DATA: "+data['NumData'].__str__())
             for i in range(int(data['NumData'])):
-                print(data['Log'][i])
+                print(data['Log'][i].__str__())
 
 
 
@@ -365,8 +385,9 @@ def main():
     tothread = TimeOutThread()
     tothread.daemon = True
     tothread.start()
-    #Heart = heartBeat()
-    #Heart.start()
+    Heart = heartBeat()
+    Heart.daemon=True
+    Heart.start()
 
     input("\nPress anything to exit..\n\n")
 
