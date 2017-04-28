@@ -5,73 +5,79 @@ import requests
 import socket
 from threading import Thread
 
-#assumes you have an internet access, and that there is no local proxy
+#Assume you have internet access, used to find local IP
 #http://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib
 def getOwnIpAddress():
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     s.connect(("8.8.8.8", 80))
     return s.getsockname()[0]
 
+#Get index / id from worker list
 def getWorkerId():
     url="http://"+getOwnIpAddress()+":13337/"
     print (url)
     print(workerList.index(url))
     return workerList.index(url)
 
+#Read configuration file which contains
+#address and port of workers, daemons, and nodes
 def load_config():
-    #membaca file configuration
-    #yang berisi daftar alamat dan port
-    #seluruh worker, daemon, dan node
-
+    #Open config file
     try:
         config=open("config.txt","r")
     except Exception:
         print(Exception.__str__())
         exit()
 
-    #Baca line pertama, jumlah worker
+    #Read first line, the amount of workers
     numWorker=int(config.__next__())
     for i in range(numWorker):
-        #rstrip untuk menghilangkan whitespace
+        #rstrip to delete whitespace
         workerList.append(config.__next__().rstrip())
+
+    #Read next line, the amound of nodes
     numBalancer=int(config.__next__())
     for i in range(numBalancer):
-        #rstrip untuk menghilangkan whitespace
+        #rstrip to delete whitespace
         balancerList.append(config.__next__().rstrip())
+
     config.close()
     print(workerList)
     print(balancerList)
 
-
+#Get CPU workload from server
 def getWorkload():
     return psutil.cpu_percent(interval=1)
 
-
-#Global variable yang berisi list URL menuju masing" node
+#Global variable which contains URL to each workers
 workerList=[]
+#Global variable which contains URL to each nodes
 balancerList=[]
-#Timespan antar broadcast daemon
+#Timespan between each daemon broadcast
 daemonDelay=2
+#Interval of getting CPU usage
 psutil.cpu_percent(interval=1)
-#gunakan ini jika sudah akan implementasi
+
+#Get appropiate worker ID
 #worker_id=getWorkerId()
 worker_id=0
 
-#Loac config.txt
+#Load config.txt
 load_config()
-#Loop untuk melakukan broadcast terus menerus
+
+#Loop to continously broadcast
 while True:
+    #Get current workload and construct messages
     current_workload=getWorkload().__str__()
     package={
         'worker_id':worker_id,
         'workload':current_workload,
     }
-    #mengirim via get ke seluruh balancer
+
+    #Send messages via get method, thread to prevent blocking execution
     for url in balancerList:
         try:
             print("Broadcast workload to: "+url+"workload/"+json.dumps(package))
             Thread(target=requests.get(url+"workload/"+json.dumps(package)))
         except Exception:
             print(Exception)
-    #Sleep selama daemonDelay agar tidak spamming
-    #time.sleep(daemonDelay)
