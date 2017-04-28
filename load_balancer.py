@@ -121,7 +121,7 @@ seed()
 PORT = 0
 worker_address = "http://localhost:13337/"
 
-waittime = 6+ uniform(0, 4) #time wait to next timeout in seconds
+waittime = 6+ uniform(2, 5) #time wait to next timeout in seconds
 isTimeOut = False #Election Timeout
 TimeOutCounter = False
 workerList=[]
@@ -354,7 +354,7 @@ class NodeHandler(BaseHTTPRequestHandler):
         #Cari bilangan prima
         #formatnya: LaodBalancerURL/AngkaYangDicari
         else :
-            
+
 
             bilanganDicari=int(args[1])
             indexWorkerTerkecil=0
@@ -362,7 +362,7 @@ class NodeHandler(BaseHTTPRequestHandler):
             for i in range(workerData.numWorker):
                 if workerData.workload[indexWorkerTerkecil]>workerData.workload[i]:
                     indexWorkerTerkecil=i
-            url=workerList[i]
+            url=workerList[indexWorkerTerkecil]
             url=url+bilanganDicari.__str__()
 
             self.send_response(301)
