@@ -344,15 +344,29 @@ class NodeHandler(BaseHTTPRequestHandler):
             for i in range(int(data['NumData'])):
                 print("APPEND DATA BARU")
                 print(data['Log'][i].__str__())
-                nodeLog.append_log(data['Log'][i])
-                workerData.workload[data['Log'][i].id_worker]=data['Log'][i].workload
-                
+                t = json.loads(data['Log'][i])
+                nodeLog.append_log(t)
+                workerData.workload[t['id_worker']] = t['workload']
+                print(workerData.workload.__str__())
             print("JUMLAH DATA FOLLOWER SAAT INI: " + nodeLog.numLog.__str__())
 
 
-
+        #Cari bilangan prima
+        #formatnya: LaodBalancerURL/AngkaYangDicari
         else :
-            self.request_worker(int(args[1]))
+            self.send_response(200)
+
+            bilanganDicari=int(args[1])
+            indexWorkerTerkecil=0
+            #Loop dari semua worker, mencari worker dengan load terkecil
+            for i in range(workerData.numWorker):
+                if workerData.workload[indexWorkerTerkecil]>workerData.workload[i]:
+                    indexWorkerTerkecil=i
+            url=workerList[i]
+            requests.get(url+bilanganDicari)
+            self.send_response(200)
+            self.send_header('Location', url)
+            self.end_headers()
 
 def load_config():
     #membaca file configuration
