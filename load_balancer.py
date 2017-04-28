@@ -15,6 +15,7 @@ class heartBeat(Thread):
             #cuma berjalan jika leader
             if status==2:
                 while True:
+
                     global TimeOutCounter
                     TimeOutCounter = True
                     print("Kirimkan hati")
@@ -52,6 +53,10 @@ class workerLoad:
 
 
 class logData:
+    def tojson(self):
+        return json.dumps(self, default=lambda o: o.__dict__,
+            sort_keys=True, indent=4)
+
     def __init__(self,term,id_worker,workload):
         self.term=term
         self.id_worker=id_worker
@@ -249,11 +254,20 @@ class NodeHandler(BaseHTTPRequestHandler):
                 data = json.loads(urllib.parse.unquote(args[2]))
                 inputData=logData(currentTerm,int(data['worker_id']),float(data['workload']))
                 nodeLog.insertLog(inputData,lastIndex)
-
+                nodeLog.commitedLog+=1
+                print(nodeLog.logList[nodeLog.numLog].workload)
+                print(nodeLog.logList[nodeLog.numLog].id_worker)
+                print("YOW WHAT THE FUCK")
+                print("Panjang log leader saat ini: "+nodeLog.numLog.__str__())
                 lastIndex+=1
+
                 #Harusnya belum dicommit, untuk di tes terlebih dahulu
 
                 workerData.workload[int(data['worker_id'])]=float(data['workload'])
+                print("Worker Data:")
+                print("Jumlah worker: "+workerData.numWorker.__str__())
+                for i in range (workerData.numWorker):
+                    print(workerData.workload[i].__str__())
                 # print(nodeLog.logList[nodeLog.numLog].id_worker)
                 # print(nodeLog.logList[nodeLog.numLog].workload)
             self.send_response(200)
@@ -282,13 +296,14 @@ class NodeHandler(BaseHTTPRequestHandler):
             self.end_headers()
             data = json.loads(urllib.parse.unquote(args[2]))
             LeaderTerm=int(data['term'])
+            currentTerm=LeaderTerm
             LeaderID = int(data['leader_id'])
             LeaderLastLog=int(data['last_log'])
             LeaderLastCommit=int(data['leader_commit'])
             url = balancerList[LeaderID]
-            if (LeaderTerm<currentTerm):
-                raise Exception("Leader term is less than follower term")
-            elif LeaderLastLog<nodeLog.numLog:
+            #if (LeaderTerm<currentTerm):
+             #   raise Exception("Leader term is less than follower term")
+            if LeaderLastLog<nodeLog.numLog:
                 raise Exception("Leader log is lesser than follower log")
             elif LeaderLastCommit<nodeLog.commitedLog:
                 raise Exception("Leader commit is lesser than follower log")
@@ -305,24 +320,34 @@ class NodeHandler(BaseHTTPRequestHandler):
             data = json.loads(urllib.parse.unquote(args[4]))
             SendLog=[]
             for i in range(int(args[2]),int(args[3])):
-                SendLog.append(nodeLog.logList[i])
+                SendLog.append(nodeLog.logList[i].tojson())
+            jumlahData=int(args[3])-int(args[2])
+            print("JUMLAH DATANYA: "+jumlahData.__str__())
             dict={
                 'Log':SendLog,
-                'NumData':int(args[3])-int(args[2])
+                'NumData':jumlahData,
             }
             #Request append ke follower
             argument4=args[4]
             targetIndex=int(argument4)
             targetURL=balancerList[targetIndex]
+
             print("TARGETNYA : " + targetURL)
-            requests.get(targetURL+"append/"+json.dumps(dict),timeout=1)
+            print("FUCKING JSON DUMP "+json.dumps(dict))
+            requests.get(targetURL+"append/"+json.dumps(dict))
         elif args[1] == 'append':
+            print("MASUK APPEND FOR GOD SAKE")
             self.send_response(200)
             self.end_headers()
             data = json.loads(urllib.parse.unquote(args[2]))
             print("JUMLAH DATA: "+data['NumData'].__str__())
             for i in range(int(data['NumData'])):
+                print("APPEND DATA BARU")
                 print(data['Log'][i].__str__())
+                nodeLog.append_log(data['Log'][i])
+                workerData.workload[data['Log'][i].id_worker]=data['Log'][i].workload
+                
+            print("JUMLAH DATA FOLLOWER SAAT INI: " + nodeLog.numLog.__str__())
 
 
 
@@ -370,9 +395,7 @@ def main():
     PORT = int(balancerList[nodeIndex][start+1:end])
     global workerData
     workerData = workerLoad(len(workerList))
-    print(nodeLog.commitedLog)
-    print(nodeLog.numLog)
-    print(workerData.workload[0])
+
     try:
         node_thread = Thread(target=StartNode,args = (PORT, ))
         node_thread.daemon = True
