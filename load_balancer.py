@@ -1,6 +1,7 @@
 from http.server import HTTPServer
 from http.server import BaseHTTPRequestHandler
 from threading import Thread
+from random import seed, uniform
 from time import sleep
 import requests
 import sys
@@ -9,29 +10,33 @@ import urllib
 
 class heartBeat(Thread):
     def run(self):
-        #cuma berjalan jika leader
-        if status==2:
-            while True:
-                #Mengirimkan panjang log dan mempersiapkan log apa saja yang akan dikirim
-                package={
-                    #id of the leader
-                    'leader_id': nodeIndex,
-                    #last log number
-                    'last_log' :nodeLog.numLog,
-                    #Last leader term
-                    'term' : currentTerm,
-                    #Last commited by leader
-                    'leader_commit' :nodeLog.commitedLog,
-                }
-                for url in balancerList:
-                    try:
-                        #Request ke follower lain untuk
-                        #Meminta daftar log yang butuh mereka commit
-                        if balancerList.index(url)!=nodeIndex:
-                            requests.get(url+"appendLog/"+json.dumps(package),timeout=1)
-                    except Exception:
-                        print(Exception)
-                sleep(2)
+        while True:
+            #cuma berjalan jika leader
+            if status==2:
+                while True:
+                    global TimeOutCounter
+                    TimeOutCounter = True
+                    print("Kirimkan hati")
+                    #Mengirimkan panjang log dan mempersiapkan log apa saja yang akan dikirim
+                    package={
+                        #id of the leader
+                        'leader_id': nodeIndex,
+                        #last log number
+                        'last_log' :nodeLog.numLog,
+                        #Last leader term
+                        'term' : currentTerm,
+                        #Last commited by leader
+                        'leader_commit' :nodeLog.commitedLog,
+                    }
+                    for url in balancerList:
+                        try:
+                            #Request ke follower lain untuk
+                            #Meminta daftar log yang butuh mereka commit
+                            if balancerList.index(url)!=nodeIndex:
+                                Thread(target=requests.get(url+"appendLog/"+json.dumps(package),timeout=1))
+                        except Exception:
+                            print(Exception)
+                    sleep(2)
 
 
 class workerLoad:
@@ -107,7 +112,7 @@ class log:
 PORT = 0
 worker_address = "http://localhost:13337/"
 
-waittime = 6 #time wait to next timeout in seconds
+waittime = 6+ uniform(0, 4) #time wait to next timeout in seconds
 isTimeOut = False #Election Timeout
 TimeOutCounter = False
 workerList=[]
@@ -123,6 +128,8 @@ nLog=-1
 nCommited=-1
 #log di setiap node
 nodeLog=log()
+#Variable yang menyimpan ID Leader saat ini
+
 
 #perbandingan workload antar worker
 workerData=workerLoad(99)
@@ -238,24 +245,65 @@ class NodeHandler(BaseHTTPRequestHandler):
                 # print(nodeLog.logList[nodeLog.numLog].workload)
             self.send_response(200)
             self.end_headers()
-            
+
         #Menerima respon permintaan vote
         elif args[1] == 'recVote' :
             self.send_response(200)
             self.end_headers()
             if args[2] == 'yes' :
+                TimeOutCounter=True
                 numVote += 1
                 print("Received yes vote")
             else :
                 print("Received no vote")
 
+        #Ketika leader meminta append log baru
+        #Cek log yang sudah dimiliki oleh follower
+        #Dan follower merequest log yang dibutuhkan menuju leader
+        #Jangan lupa lakukan commit untuk data berdasarkan last commit leader
         elif args[1] == 'appendLog':
+            TimeOutCounter=True
+            self.send_response(200)
+            self.end_headers()
             data = json.loads(urllib.parse.unquote(args[2]))
+            LeaderTerm=int(data['term'])
+            LeaderID = int(data['leader_id'])
+            LeaderLastLog=int(data['last_log'])
+            LeaderLastCommit=int(data['leader_commit'])
+            url = balancerList[LeaderID]
+            if (LeaderTerm<currentTerm):
+                raise Exception("Leader term is less than follower term")
+            elif LeaderLastLog<nodeLog.numLog:
+                raise Exception("Leader log is lesser than follower log")
+            elif LeaderLastCommit<nodeLog.commitedLog:
+                raise Exception("Leader commit is lesser than follower log")
+            else:
+                #ubah commit follower sesuai leader
+                nodeLog.commitedLog=LeaderLastCommit
+                #Request log dari numlog saat ini, hingga leaderlast log
+                requests.get(url+"/reqLog/"+nodeLog.numLog.__str__()+"/"+LeaderLastLog.__str__()+"/"+balancerList[nodeIndex])
+
+        elif args[1] == 'reqLog':
             self.send_response(200)
             self.end_headers()
 
+            SendLog=[]
+            for i in range(int(args[2]),int(args[3])):
+                SendLog.append(nodeLog.logList[i])
+            dict={
+                'Log':SendLog,
+                'NumData':int(args[3])-int(args[2])
+            }
+            #Request append ke follower
+            requests.get(args[4]+"/append/"+json.dumps(dict))
         elif args[1] == 'append':
-            
+            self.send_response(200)
+            self.end_headers()
+            data = json.loads(urllib.parse.unquote(args[2]))
+            print("JUMLAH DATA: "+data['NumData'])
+            for i in range(int(data['NumData'])):
+                print(data['Log'][i])
+
 
 
         else :
@@ -317,6 +365,8 @@ def main():
     tothread = TimeOutThread()
     tothread.daemon = True
     tothread.start()
+    #Heart = heartBeat()
+    #Heart.start()
 
     input("\nPress anything to exit..\n\n")
 
