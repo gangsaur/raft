@@ -3,7 +3,7 @@ import time
 import json
 import requests
 import socket
-
+from threading import Thread
 
 #assumes you have an internet access, and that there is no local proxy
 #http://stackoverflow.com/questions/166506/finding-local-ip-addresses-using-pythons-stdlib
@@ -51,7 +51,7 @@ def getWorkload():
 workerList=[]
 balancerList=[]
 #Timespan antar broadcast daemon
-daemonDelay=3
+daemonDelay=2
 psutil.cpu_percent(interval=1)
 #gunakan ini jika sudah akan implementasi
 #worker_id=getWorkerId()
@@ -70,8 +70,8 @@ while True:
     for url in balancerList:
         try:
             print("Broadcast workload to: "+url+"workload/"+json.dumps(package))
-            requests.get(url+"workload/"+json.dumps(package),timeout=5)
+            Thread(target=requests.get(url+"workload/"+json.dumps(package)))
         except Exception:
             print(Exception)
     #Sleep selama daemonDelay agar tidak spamming
-    time.sleep(daemonDelay)
+    #time.sleep(daemonDelay)

@@ -7,6 +7,33 @@ import sys
 import json
 import urllib
 
+class heartBeat(Thread):
+    def run(self):
+        #cuma berjalan jika leader
+        if status==2:
+            while True:
+                #Mengirimkan panjang log dan mempersiapkan log apa saja yang akan dikirim
+                package={
+                    #id of the leader
+                    'leader_id': nodeIndex,
+                    #last log number
+                    'last_log' :nodeLog.numLog,
+                    #Last leader term
+                    'term' : currentTerm,
+                    #Last commited by leader
+                    'leader_commit' :nodeLog.commitedLog,
+                }
+                for url in balancerList:
+                    try:
+                        #Request ke follower lain untuk
+                        #Meminta daftar log yang butuh mereka commit
+                        if balancerList.index(url)!=nodeIndex:
+                            requests.get(url+"appendLog/"+json.dumps(package),timeout=1)
+                    except Exception:
+                        print(Exception)
+                sleep(2)
+
+
 class workerLoad:
     def __init__(self,numWorker):
         self.numWorker=numWorker
@@ -44,8 +71,8 @@ class log:
     def insertLog(self,logData,lastLogIndex):
         #jika insert log data baru
         if (self.numLog==(lastLogIndex-1)):
-            self.logList.append(logData)
-
+            self.append_log(logData)
+            print("APPEND LOG")
 
         elif self.commitedLog>=int(lastLogIndex):
             raise Exception("Cannot change committed log")
@@ -85,7 +112,7 @@ isTimeOut = False #Election Timeout
 TimeOutCounter = False
 workerList=[]
 balancerList=[]
-nodeIndex = 0
+nodeIndex = 0 #Index worker sesuai file config
 status = 0 #0 = follower, 1 = candidate, 2 = leader
 votedFor = -1
 currentTerm = 0
@@ -96,10 +123,12 @@ nLog=-1
 nCommited=-1
 #log di setiap node
 nodeLog=log()
+
 #perbandingan workload antar worker
 workerData=workerLoad(99)
-#Index input terakhir
+#Index input log terakhir
 lastIndex=0
+
 def requestvote(url) :
     print("sendind request vote " + url)
     try :
@@ -199,7 +228,8 @@ class NodeHandler(BaseHTTPRequestHandler):
                 data = json.loads(urllib.parse.unquote(args[2]))
                 inputData=logData(currentTerm,int(data['worker_id']),float(data['workload']))
                 nodeLog.insertLog(inputData,lastIndex)
-                nodeLog.numLog+=1
+                print("INI ISI LOG TERAKHIR: "+nodeLog.logList[lastIndex].id_worker.__str__())
+                print("INI ISI LOG TERAKHIR: " + nodeLog.logList[lastIndex].workload.__str__())
                 lastIndex+=1
                 #Harusnya belum dicommit, untuk di tes terlebih dahulu
                 print(int(data['worker_id']).__str__())
@@ -219,10 +249,14 @@ class NodeHandler(BaseHTTPRequestHandler):
             else :
                 print("Received no vote")
 
-        elif args[1] == 'workload':
+        elif args[1] == 'appendLog':
+            data = json.loads(urllib.parse.unquote(args[2]))
             self.send_response(200)
             self.end_headers()
-            dict=json.dumps(urllib.parse.unquote(args[2]))
+
+        elif args[1] == 'append':
+            
+
 
         else :
             self.request_worker(int(args[1]))
