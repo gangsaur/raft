@@ -86,8 +86,8 @@ class log:
         if (self.numLog==(lastLogIndex-1)):
             self.append_log(logData)
             print("APPEND LOG")
-        elif self.commitedLog>=int(lastLogIndex):
-            raise Exception("Cannot change committed log")
+        #elif self.commitedLog>=int(lastLogIndex):
+          # raise Exception("Cannot change committed log")
         elif int(lastLogIndex)>self.numLog+1:
             print ("Lastlog: " + str(lastLogIndex))
             print("Numlog: " + str(self.numLog))
@@ -195,12 +195,9 @@ class TimeOutThread(Thread):
                 elif(status == 1) :
                     print("Number vote : " + numVote.__str__() )
                     #Ascend to leader
-                    if(numVote >= ((numBalancer+1)/2)) :
-                        print("Have majority vote, now becoming a leader")
-                        numVote = 0
-                        status = 2
+                    
                     #Failed, start new term and election
-                    else :
+                    if(numVote < (numBalancer+1)/2) :
                         print("Fail election, starting a new one")
                         numVote = 0
                         self.start_new_term()
@@ -228,7 +225,7 @@ class NodeHandler(BaseHTTPRequestHandler):
             print("This node term " + currentTerm.__str__())
             TimeOutCounter = True
             #Reply yes if condition is met
-            if ((currentTerm < int(args[2])) AND (nodeLog.numLog > int[args[4]])):
+            if ((currentTerm < int(args[2])) and (nodeLog.numLog <= int(args[4]))):
                 status = 0 #Demote to follower
                 currentTerm = int(args[2]) #Update current term
                 votedFor = int(args[3]) #Update voted for
@@ -282,6 +279,10 @@ class NodeHandler(BaseHTTPRequestHandler):
             if args[2] == 'yes' :
                 TimeOutCounter=True
                 numVote += 1
+                if(numVote >= ((numBalancer+1)/2)) :
+                        print("Have majority vote, now becoming a leader")
+                        numVote = 0
+                        status = 2
                 print("Received yes vote")
             else :
                 print("Received no vote")
