@@ -17,7 +17,7 @@ class heartBeat(Thread):
                 while True:
                     global TimeOutCounter
                     TimeOutCounter = True
-                    print("Kirimkan hati")
+                    print("Heartbeat Timeout")
                     #Check for log length and decide what to send
                     package={
                         #id of the leader
@@ -33,12 +33,14 @@ class heartBeat(Thread):
                         try:
                             #Request to other follower
                             #Request needed log entry
+                            print("Heartbeat to " + url)
                             if balancerList.index(url)!=nodeIndex:
-                                someThread=Thread(target=requests.get(url+"appendLog/"+json.dumps(package),timeout=1))
+                                someThread=Thread(target=requests.get(url+"appendLog/"+json.dumps(package)), timeout = 0.1)
                                 someThread.daemon=True
                                 someThread.start()
                         except Exception as e:
-                            print(e.__str__())
+                            # print(e.__str__())
+                            print("Heartbeat to " + url + " timed out")
                     sleep(2)
 
 #Class to store workload
@@ -139,12 +141,13 @@ lastIndex=0
 
 #Used to request vote to node
 def requestvote(url) :
-    print("sendind request vote " + url)
+    print("Sendind request vote " + url)
     url=url.strip()
     try :
-        requests.get(url + "vote/" + currentTerm.__str__() + "/" + nodeIndex.__str__(),timeout=1)
+        requests.get(url + "vote/" + currentTerm.__str__() + "/" + nodeIndex.__str__(), timeout = 0.1)
     except Exception as e:
-        print("error request exception" + e.__str__())
+        # print("Asking for vote timed out" + e.__str__())
+        print("Asking for vote from " + url + " timed out")
 
 #Thread to process timeout
 class TimeOutThread(Thread):
@@ -179,6 +182,7 @@ class TimeOutThread(Thread):
 
             #If timeout, process
             if not TimeOutCounter :
+                print("Timed out")
                 #Timeout as follower, ascend to candidate
                 if(status == 0) :
                     print("Become a candidate starting a new election")
@@ -189,7 +193,7 @@ class TimeOutThread(Thread):
 
                 #Timeout as candidate, check number of vote
                 elif(status == 1) :
-                    print("number vote : " + numVote.__str__() )
+                    print("Number vote : " + numVote.__str__() )
                     #Ascend to leader
                     if(numVote >= ((numBalancer+1)/2)) :
                         print("Have majority vote, now becoming a leader")
@@ -204,7 +208,6 @@ class TimeOutThread(Thread):
             #Prevent timeout as leader
             if (status!=2) :
                 TimeOutCounter = False
-            print("Reset timeout")
 
 #HTTPServer to response request
 class NodeHandler(BaseHTTPRequestHandler):
@@ -222,7 +225,7 @@ class NodeHandler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.end_headers()
             print("Received election vote request from node " + args[3] + " on term " + args[2])
-            print(" This node term " + currentTerm.__str__())
+            print("This node term " + currentTerm.__str__())
             TimeOutCounter = True
             #Reply yes if condition is met
             if currentTerm < int(args[2]) :
@@ -230,22 +233,24 @@ class NodeHandler(BaseHTTPRequestHandler):
                 currentTerm = int(args[2]) #Update current term
                 votedFor = int(args[3]) #Update voted for
                 try :
-                    print("Vote yes")
-                    requests.get(balancerList[int(args[3])]+"recVote/yes",timeout=1)
+                    print("Vote yes to " + balancerList[int(args[3])])
+                    requests.get(balancerList[int(args[3])]+"recVote/yes", timeout = 0.1)
                     sleep(3)
                     TimeOutCounter=True
-                except :
-                    print("error request")
+                except Exception as e:
+                    print("Sending vote yes to " + balancerList[int(args[3])] + " timed out")
             #Reply no if condition is not met
             else :
                 try :
-                    print("Vote no")
-                    requests.get(balancerList[int(args[3])]+"recVote/no",timeout=1)
-                except :
-                    print("error request")
+                    print("Vote no to " + balancerList[int(args[3])])
+                    requests.get(balancerList[int(args[3])]+"recVote/no", timeout = 0.1)                    
+                except Exception as e:
+                    print("Sending vote no to " + balancerList[int(args[3])] + " timed out")
 
         #Response to sent CPU workload and store it
         elif args[1] == 'workload' :
+            self.send_response(200)
+            self.end_headers()
             #Process only if leader node
             if status==2:
                 global lastIndex
@@ -269,8 +274,6 @@ class NodeHandler(BaseHTTPRequestHandler):
                     print(workerData.workload[i].__str__())
                 # print(nodeLog.logList[nodeLog.numLog].id_worker)
                 # print(nodeLog.logList[nodeLog.numLog].workload)
-            self.send_response(200)
-            self.end_headers()
 
         #Notify requester about voting decision
         elif args[1] == 'recVote' :
@@ -286,10 +289,10 @@ class NodeHandler(BaseHTTPRequestHandler):
         #When leaders ask to append new log, check the log which follower has.
         #Follower request needed log entry. Commit according to leader last commit
         elif args[1] == 'appendLog':
-            numVote=0
-            TimeOutCounter=True
             self.send_response(200)
             self.end_headers()
+            numVote=0
+            TimeOutCounter=True
             
             #Process sent json data
             data = json.loads(urllib.parse.unquote(args[2]))
@@ -302,18 +305,22 @@ class NodeHandler(BaseHTTPRequestHandler):
             LeaderLastCommit=int(data['leader_commit'])
  
             url = balancerList[LeaderID]
-            #if (LeaderTerm<currentTerm):
-             #   raise Exception("Leader term is less than follower term")
-            if LeaderLastLog<nodeLog.numLog:
+            if (LeaderTerm<currentTerm):
+                raise Exception("Leader term is less than follower term")
+            elif LeaderLastLog<nodeLog.numLog:
                 raise Exception("Leader log is lesser than follower log")
             elif LeaderLastCommit<nodeLog.commitedLog:
                 raise Exception("Leader commit is lesser than follower log")
             else:
                 #ubah commit follower sesuai leader
                 nodeLog.commitedLog=LeaderLastCommit
-                #Request log dari numlog saat ini, hingga leaderlast log
-
-            requests.get(url+"reqLog/"+nodeLog.numLog.__str__()+"/"+LeaderLastLog.__str__()+"/"+nodeIndex.__str__(),timeout=1)
+            
+            #Request log dari numlog saat ini, hingga leaderlast log
+            try :
+                print("Request log from leader")
+                requests.get(url+"reqLog/"+nodeLog.numLog.__str__()+"/"+LeaderLastLog.__str__()+"/"+nodeIndex.__str__(), timeout = 0.1)
+            except Exception as e :
+                print("Requesting log from leader timed out")
 
         #Request append to follower
         elif args[1] == 'reqLog':
@@ -338,7 +345,10 @@ class NodeHandler(BaseHTTPRequestHandler):
             targetURL=balancerList[targetIndex]
             
             #Send request
-            requests.get(targetURL+"append/"+json.dumps(dict))
+            try :
+                requests.get(targetURL+"append/"+json.dumps(dict), timeout = 0.1)
+            except Exception as e :
+                print("Sending log data to " + targetURL + " timed out")
         
         #Append new data for follower from received message
         elif args[1] == 'append':

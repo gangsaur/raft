@@ -71,7 +71,10 @@ while True:
         try:
             print("Broadcast workload to: "+url+"workload/"+json.dumps(package))
             Thread(target=requests.get(url+"workload/"+json.dumps(package)))
-        except Exception:
-            print(Exception)
+        except Exception as e:
+            if (type(e) != requests.exceptions.ConnectionError):
+                print(str(e))
+            else:
+                print()
     #Sleep selama daemonDelay agar tidak spamming
     #time.sleep(daemonDelay)
