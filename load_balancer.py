@@ -144,7 +144,7 @@ def requestvote(url) :
     print("Sendind request vote " + url)
     url=url.strip()
     try :
-        requests.get(url + "vote/" + currentTerm.__str__() + "/" + nodeIndex.__str__(), timeout = 0.1)
+        requests.get(url + "vote/" + currentTerm.__str__() + "/" + nodeIndex.__str__() + "/" + nodeLog.numLog.__str__(), timeout = 0.1)
     except Exception as e:
         # print("Asking for vote timed out" + e.__str__())
         print("Asking for vote from " + url + " timed out")
@@ -228,7 +228,7 @@ class NodeHandler(BaseHTTPRequestHandler):
             print("This node term " + currentTerm.__str__())
             TimeOutCounter = True
             #Reply yes if condition is met
-            if currentTerm < int(args[2]) :
+            if ((currentTerm < int(args[2])) AND (nodeLog.numLog > int[args[4]])):
                 status = 0 #Demote to follower
                 currentTerm = int(args[2]) #Update current term
                 votedFor = int(args[3]) #Update voted for
