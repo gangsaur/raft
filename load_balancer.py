@@ -256,21 +256,6 @@ class NodeHandler(BaseHTTPRequestHandler):
                 #Put data into log
                 nodeLog.insertLog(inputData,lastIndex)
                 nodeLog.commitedLog+=1
-                
-                #Prepare data to write
-                SendLog=[]
-                for i in range(nodeLog.numLog):
-                    SendLog.append(nodeLog.logList[i].tojson())
-                dict={
-                    'Log':SendLog,
-                    'Num':nodeLog.numLog,
-                    'Commit':nodeLog.commitedLog
-                }
-                tmp = json.dumps(dict)
-                f = open("Log" + nodeIndex.__str__(), "w")
-                f.write(tmp)
-                f.close()
-                
                 print(nodeLog.logList[nodeLog.numLog].workload)
                 print(nodeLog.logList[nodeLog.numLog].id_worker)
                 print("Panjang log leader saat ini: "+nodeLog.numLog.__str__())
@@ -300,7 +285,6 @@ class NodeHandler(BaseHTTPRequestHandler):
         
         #When leaders ask to append new log, check the log which follower has.
         #Follower request needed log entry. Commit according to leader last commit
-        #Follower process
         elif args[1] == 'appendLog':
             numVote=0
             TimeOutCounter=True
@@ -331,8 +315,7 @@ class NodeHandler(BaseHTTPRequestHandler):
 
             requests.get(url+"reqLog/"+nodeLog.numLog.__str__()+"/"+LeaderLastLog.__str__()+"/"+nodeIndex.__str__(),timeout=1)
 
-        #Construct needed data and send to follower
-        #Leader process
+        #Request append to follower
         elif args[1] == 'reqLog':
             self.send_response(200)
             self.end_headers()
@@ -358,7 +341,6 @@ class NodeHandler(BaseHTTPRequestHandler):
             requests.get(targetURL+"append/"+json.dumps(dict))
         
         #Append new data for follower from received message
-        #Follower process
         elif args[1] == 'append':
             self.send_response(200)
             self.end_headers()
@@ -369,24 +351,9 @@ class NodeHandler(BaseHTTPRequestHandler):
             for i in range(int(data['NumData'])):
                 print(data['Log'][i].__str__())
                 t = json.loads(data['Log'][i])
-                temp=logData(t['term'],t['id_worker'],t['workload'])
-                nodeLog.append_log(temp)
+                nodeLog.append_log(t)
                 workerData.workload[t['id_worker']] = t['workload']
                 print(workerData.workload.__str__())
-
-            #Prepare data to write
-            SendLog=[]
-            for i in range(nodeLog.numLog):
-                SendLog.append(nodeLog.logList[i].tojson())
-            dict={
-                'Log':SendLog,
-                'Num':nodeLog.numLog,
-                'Commit':nodeLog.commitedLog
-            }
-            tmp = json.dumps(dict)
-            f = open("Log" + nodeIndex.__str__(), "w")
-            f.write(tmp)
-            f.close()
 
         #Search for prime numbers
         #formatnya: LaodBalancerURL/AngkaYangDicari
@@ -455,17 +422,6 @@ def main():
     
     #Create worker data to store workloads
     workerData = workerLoad(len(workerList))
-    
-    f = open("Log" + nodeIndex.__str__(),"r")
-    x = f.readlines()
-    y = json.loads(x[0])
-    nodeLog.logList = y["Log"]
-    nodeLog.numLog = y["Num"]
-    nodeLog.commitedLog = y["Commit"]
-    currentTerm = nodeLog.logList[nodeLog.numLog-1].term
-    # print(json.loads(y["Log"][0]))
-    # print(json.loads(y["Log"]))
-    f.close()
 
     #Start server to request response
     try:
